@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
-import { Container, Table } from "react-bootstrap";
+import { Container, Table, Spinner } from "react-bootstrap";
 import { motion } from "framer-motion";
 import Header from "../../component/header/header";
 import Sidebar from "../../component/sidebar/sidebar";
 import "./customer.css";
+
+const API = "http://localhost:7000/api/stats/"; // Backend endpoint
 
 const Customer = () => {
   const [customers, setCustomers] = useState([]);
@@ -12,22 +14,22 @@ const Customer = () => {
   useEffect(() => {
     const fetchCustomers = async () => {
       try {
-        // Use the correct backend URL
-        const res = await fetch("http://localhost:7000/api/stats/users");
+        const res = await fetch(API, { credentials: "include" });
         const data = await res.json();
 
+        // Map backend data to frontend format
         const formatted = data.map((user) => ({
-          name: user.name,
-          email: user.email,
+          name: user.name || "Unknown", // Use 'name' field from backend
+          email: user.email || "N/A",
           phone: user.phone || "N/A",
-          orders: user.orderCount,
-          spend: `₹${user.totalSpent.toLocaleString()}`,
+          orders: user.orderCount || 0,
+          spend: `₹${(user.totalSpent || 0).toLocaleString()}`,
         }));
 
         setCustomers(formatted);
-        setLoading(false);
       } catch (error) {
         console.error("Error fetching customers:", error);
+      } finally {
         setLoading(false);
       }
     };
@@ -38,7 +40,6 @@ const Customer = () => {
   return (
     <div>
       <Header />
-      <Sidebar />
       <div className="admin-layout">
         <Sidebar />
 
@@ -52,14 +53,16 @@ const Customer = () => {
               Customers
             </motion.h4>
 
-            <motion.div
-              initial={{ opacity: 0, y: 30 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="table-wrapper"
-            >
-              {loading ? (
-                <p>Loading customers...</p>
-              ) : (
+            {loading ? (
+              <div className="text-center py-5">
+                <Spinner animation="border" /> Loading customers...
+              </div>
+            ) : (
+              <motion.div
+                initial={{ opacity: 0, y: 30 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="table-wrapper"
+              >
                 <Table responsive bordered hover className="customers-table">
                   <thead>
                     <tr>
@@ -70,7 +73,6 @@ const Customer = () => {
                       <th>Total Spend</th>
                     </tr>
                   </thead>
-
                   <tbody>
                     {customers.map((customer, index) => (
                       <motion.tr
@@ -88,8 +90,8 @@ const Customer = () => {
                     ))}
                   </tbody>
                 </Table>
-              )}
-            </motion.div>
+              </motion.div>
+            )}
           </Container>
         </main>
       </div>

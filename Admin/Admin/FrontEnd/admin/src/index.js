@@ -27,7 +27,7 @@ root.render(
           <Route path="/order" element={<Order/>} />
           <Route path="/delivery" element={<Delivery/>} />
           <Route path="/customer" element={<Customer/>} />
-          <Route path="/payment" element={<Payment/>} />
+          {/* <Route path="/payment" element={<Payment/>} /> */}
          
        {/* <Route path="*" element={<Error/>} /> */}
     </Routes>

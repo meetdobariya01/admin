@@ -23,35 +23,17 @@ const transporter = nodemailer.createTransport({
 router.get("/", async (req, res) => {
   try {
     const orders = await Order.find()
-      .populate("user", "firstName lastName email")
       .populate("items.product", "name price image")
       .populate("items.box", "name size price")
       .lean();
 
-    const formattedOrders = orders.map((order) => {
-      const user = order.user || {};
-      const fullName =
-        user.firstName || user.lastName
-          ? `${user.firstName || ""} ${user.lastName || ""}`.trim()
-          : "Unknown User";
-
-      return {
-        _id: order._id,
-        customerName: fullName,
-        customerEmail: user.email || "N/A",
-        totalAmount: order.totalAmount,
-        status: order.status,
-        items: order.items,
-        createdAt: order.createdAt,
-      };
-    });
-
-    res.json({ orders: formattedOrders });
+    res.json({ orders }); // ✅ SEND FULL ORDER (includes address)
   } catch (error) {
     console.error("Error fetching orders:", error);
     res.status(500).json({ error: error.message });
   }
 });
+
 
 // ✅ Get single order
 router.get("/:id", async (req, res) => {
@@ -71,41 +53,67 @@ router.get("/:id", async (req, res) => {
 // ✅ Update order delivery status + send email
 router.put("/:id/status", async (req, res) => {
   const { status, message } = req.body;
+  const allowedStatuses = ["Pending", "Shipped", "Delivered", "Cancelled"];
+
+  if (!allowedStatuses.includes(status)) {
+    return res.status(400).json({ message: "Invalid status" });
+  }
+
   try {
-    const order = await Order.findById(req.params.id).populate("user", "firstName lastName email");
+    const order = await Order.findById(req.params.id);
+
     if (!order) return res.status(404).json({ message: "Order not found" });
 
+    // Ensure trackingHistory exists
+    if (!Array.isArray(order.trackingHistory)) order.trackingHistory = [];
+
+    // Update status & tracking
     order.status = status;
     order.trackingHistory.push({
       status,
       message: message || `Order marked as ${status}`,
+      date: new Date(),
     });
+
     await order.save();
 
-    const fullName = `${order.user.firstName || ""} ${order.user.lastName || ""}`.trim();
+    // Determine email recipient
+    const recipientEmail = order.user?.email || order.address?.email;
+    const fullName =
+      (order.user
+        ? `${order.user.firstName || ""} ${order.user.lastName || ""}`
+        : order.address
+        ? `${order.address.firstName || ""} ${order.address.lastName || ""}`
+        : "Customer"
+      ).trim();
 
-    const mailOptions = {
-      from: process.env.EMAIL_USER,
-      to: order.user.email,
-      subject: `Your order status: ${status}`,
-      html: `
-        <h3>Hello ${fullName || "Customer"},</h3>
-        <p>Your order status has been updated to: <b>${status}</b>.</p>
-        <p>${message || "We'll keep you updated as it progresses."}</p>
-        <hr/>
-        <p>Thank you for shopping with us!</p>
-      `,
-    };
+    // Send email if email exists & SMTP credentials set
+    if (recipientEmail && process.env.EMAIL_USER && process.env.EMAIL_PASS) {
+      const mailOptions = {
+        from: process.env.EMAIL_USER,
+        to: recipientEmail,
+        subject: `Your order status: ${status}`,
+        html: `
+          <h3>Hello ${fullName},</h3>
+          <p>Your order status has been updated to: <b>${status}</b>.</p>
+          <p>${message || "We'll keep you updated as it progresses."}</p>
+          <hr/>
+          <p>Thank you for shopping with us!</p>
+        `,
+      };
 
-    if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
-      await transporter.sendMail(mailOptions);
-      console.log(`📧 Email sent to ${order.user.email}`);
+      try {
+        await transporter.sendMail(mailOptions);
+        console.log(`📧 Email sent to ${recipientEmail}`);
+      } catch (err) {
+        console.error("⚠️ Email sending failed:", err.response || err.message || err);
+      }
     }
 
     res.json({ message: `Order status updated to ${status}`, order });
   } catch (error) {
-    console.error("Email error:", error);
-    res.status(500).json({ error: error.message });
+    console.error("Error updating order status:", error);
+    res.status(500).json({ error: "Internal Server Error" });
   }
 });
 

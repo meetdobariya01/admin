@@ -25,10 +25,12 @@ app.use(express.urlencoded({ extended: true }));
 // ✅ CORS
 app.use(
   cors({
-    origin: process.env.CLIENT_URL || "http://localhost:3001",
+    origin: ["http://localhost:3000", "http://localhost:3001"],
     credentials: true,
   })
 );
+
+
 
 // ✅ FIXED session
 app.use(

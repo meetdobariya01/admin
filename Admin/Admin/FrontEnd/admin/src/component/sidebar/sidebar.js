@@ -92,9 +92,9 @@ const Sidebar = () => {
                 <FaUsers /> Customers
               </NavLink>
 
-              <NavLink to="/payment" className="nav-link" onClick={handleClose}>
+              {/* <NavLink to="/payment" className="nav-link" onClick={handleClose}>
                 <FaMoneyBill /> Payments
-              </NavLink>
+              </NavLink> */}
 
               <NavLink to="/delivery" className="nav-link" onClick={handleClose}>
                 <FaWarehouse /> Delivery

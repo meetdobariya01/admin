@@ -24,35 +24,80 @@ router.get("/sales-overview", async (req, res) => {
   try {
     const sales = await Order.aggregate([
       { $match: { status: "Delivered" } },
-      { $group: { _id: { $month: "$createdAt" }, totalSales: { $sum: "$totalAmount" }, ordersCount: { $sum: 1 } } },
+      { $group: { 
+          _id: { $month: "$createdAt" },  
+          totalSales: { $sum: "$totalAmount" }, 
+          ordersCount: { $sum: 1 } 
+      } },
       { $sort: { "_id": 1 } },
     ]);
-    res.json(sales.map(s => ({ month: s._id, totalSales: s.totalSales, orders: s.ordersCount })));
+    
+    // Fix: Ensure totalSales is rounded to avoid the long decimals seen in your UI
+    res.json(sales.map(s => ({ 
+      month: s._id, 
+      totalSales: Math.round(s.totalSales * 100) / 100, // Rounds to 2 decimal places
+      orders: s.ordersCount 
+    })));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
 // Users
-router.get("/users", async (req, res) => {
+router.get("/", async (req, res) => {
   try {
-    const users = await User.find().select("firstName lastName email phone");
-    const data = await Promise.all(
-      users.map(async user => {
-        const orderCount = await Order.countDocuments({ user: user._id });
-        const totalSpentAgg = await Order.aggregate([{ $match: { user: new mongoose.Types.ObjectId(user._id) } }, { $group: { _id: null, total: { $sum: "$totalAmount" } } }]);
-        return {
-          name: `${user.firstName} ${user.lastName}`,
-          email: user.email,
-          phone: user.phone || "N/A",
-          orderCount,
-          totalSpent: totalSpentAgg[0]?.total || 0,
-        };
-      })
-    );
-    res.json(data);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
+    const users = await User.find().lean();
+    const orders = await Order.find().lean();
+
+    const userStatsMap = new Map();
+
+    // 1. Initialize Map with registered users
+    users.forEach(user => {
+      userStatsMap.set(user._id.toString(), {
+        name: `${user.firstName || ""} ${user.lastName || ""}`.trim() || "Registered User",
+        email: user.email,
+        phone: user.phone || "N/A",
+        orderCount: 0,
+        totalSpent: 0,
+        isGuest: false
+      });
+    });
+
+    // 2. Process all orders
+    orders.forEach(o => {
+      // Use o.user because that is what your data shows
+      const userIdStr = o.user ? o.user.toString() : null;
+
+      if (userIdStr && userStatsMap.has(userIdStr)) {
+        // Update Registered User stats
+        const stats = userStatsMap.get(userIdStr);
+        stats.orderCount += 1;
+        stats.totalSpent += (o.totalAmount || 0);
+      } else {
+        // Handle as Guest User (grouped by email)
+        const guestEmail = o.address?.email || "Guest";
+        if (userStatsMap.has(guestEmail)) {
+          const stats = userStatsMap.get(guestEmail);
+          stats.orderCount += 1;
+          stats.totalSpent += (o.totalAmount || 0);
+        } else {
+          userStatsMap.set(guestEmail, {
+            name: `${o.address?.firstName || ""} ${o.address?.lastName || ""}`.trim() || "Guest",
+            email: guestEmail,
+            phone: o.address?.phone || "N/A",
+            orderCount: 1,
+            totalSpent: o.totalAmount || 0,
+            isGuest: true
+          });
+        }
+      }
+    });
+
+    // Convert Map values to array for the frontend
+    res.json(Array.from(userStatsMap.values()));
+  } catch (err) {
+    console.error("Error fetching user stats:", err);
+    res.status(500).json({ error: "Internal Server Error" });
   }
 });
 
